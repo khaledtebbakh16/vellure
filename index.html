@@ -449,45 +449,16 @@ const DEFAULT_PRODUCTS = {
     { id:'p9', name:'خيوط خياطة ملونة (طقم 50)', price:1500, description:'طقم خيوط خياطة بـ 50 لون مختلف. خيوط بوليستر متينة لا تنقطع بسهولة. مثالية لجميع مشاريع الخياطة.', images:[], mainImage:0, stock:30, bestSeller:true, categoryId:'cat_fabrics' },
   ]
 };
-
-/* ═══════════════ STORAGE ENGINE ═══════════════ */
+/* ═══════════════ STORAGE ENGINE (مُصحح) ═══════════════ */
 const Storage = {
   _key(k) { return STORAGE_PREFIX + k; },
+  
+  // ... (احتفظ بالدوال الأصلية get, set, remove هنا) ...
 
-  get(key, fallback = null) {
-    try {
-      const raw = localStorage.getItem(this._key(key));
-      if (raw === null || raw === undefined) return fallback;
-      return JSON.parse(raw);
-    } catch (e) {
-      console.error('Storage get error:', key, e);
-      return fallback;
-    }
-  },
-
- async set(key, value) {
-    try {
-      localStorage.setItem(this._key(key), JSON.stringify(value));
-      await db.ref(key).set(value); // الحفظ السحابي
-      return { success: true };
-    } catch (e) {
-      console.error('Firebase save error:', e);
-      return { success: false, error: 'failed', message: e.message };
-    }
-  },
-
- remove(key) {
-    try { 
-      localStorage.removeItem(this._key(key)); 
-      db.ref(key).remove(); 
-    } catch(e) {}
-  },   // ✅ أضف هذه الفاصلة
-
-  // Category-split product storage
   async saveProducts(categoryId, products) {
     try {
       localStorage.setItem(this._key('products_' + categoryId), JSON.stringify(products));
-      await db.ref(`products/${categoryId}`).set(products); // حفظ المنتجات سحابياً
+      await db.ref(`products/${categoryId}`).set(products);
       return { success: true };
     } catch (e) {
       return { success: false, error: 'failed', message: e.message };
@@ -498,17 +469,7 @@ const Storage = {
     return this.get('products_' + categoryId, []);
   },
 
-  getAllProducts(categories) {
-    let all = [];
-    for (const cat of categories) {
-      const prods = this.getProducts(cat.id);
-      all = all.concat(prods);
-    }
-    return all;
-  },
-
   async init() {
-    // Initialize defaults if empty
     const cats = this.get('categories');
     if (!cats) {
       await this.set('categories', DEFAULT_CATEGORIES);
@@ -517,12 +478,9 @@ const Storage = {
         await this.saveProducts(cat.id, prods);
       }
     }
-    if (!this.get('settings')) await this.set('settings', DEFAULT_SETTINGS);
-    if (!this.get('hero')) await this.set('hero', DEFAULT_HERO);
-    if (!this.get('orders')) await this.set('orders', []);
+    // ... إكمال الإعدادات الأخرى
   }
 };
-
 /* ═══════════════ IMAGE COMPRESSION ═══════════════ */
 function compressImage(file, maxWidth = 800, quality = 0.7) {
   return new Promise((resolve, reject) => {
@@ -1132,8 +1090,7 @@ function AdminPanel({ open, onClose, onDataChange }) {
   const [selectedCat, setSelectedCat] = useState('');
 
   // Load products for all categories
- const loadProducts = useCallback(() => {}, []);
-  useEffect(() => {
+    useEffect(() => {
     if (open && authed) {
       // مزامنة فورية للوحة الإدارة
       db.ref('categories').on('value', s => setCategories(s.val() || DEFAULT_CATEGORIES));
@@ -1141,9 +1098,17 @@ function AdminPanel({ open, onClose, onDataChange }) {
       db.ref('orders').on('value', s => setOrders(s.val() || []));
       db.ref('settings').on('value', s => setSettings(s.val() || DEFAULT_SETTINGS));
       db.ref('hero').on('value', s => setHero(s.val() || DEFAULT_HERO));
+
+      // هادا هو الكود الجديد باش نحبسو الاتصال كي نغلقو اللوحة (Cleanup)
+      return () => {
+        db.ref('categories').off();
+        db.ref('products').off();
+        db.ref('orders').off();
+        db.ref('settings').off();
+        db.ref('hero').off();
+      };
     }
   }, [open, authed]);
-
   useEffect(() => {
     if (!open) {
       setAuthed(false);
